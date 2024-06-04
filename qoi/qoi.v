@@ -1,14 +1,19 @@
 module qoi
 
-enum Colorspace as u8 {
-	qoi_srgb
-	qoi_linear
+pub enum Colorspace as u8 {
+	srgb
+	linear
 }
 
-struct Decoder {
+pub enum Channels as u8 {
+	rgb  = 3
+	rgba = 4
+}
+
+pub struct Decoder {
 	width      u32
 	height     u32
-	channels   u8
+	channels   Channels
 	colorspace Colorspace
 }
 
