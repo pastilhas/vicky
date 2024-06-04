@@ -1,0 +1,4 @@
+module qoi
+
+fn encode() {
+}
