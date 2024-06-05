@@ -5,9 +5,8 @@ import qoi
 fn main() {
 	println('Hello World!')
 
-	a := []u8{}
-	b := qoi.Decoder{10, 10, qoi.Channels.rgb, qoi.Colorspace.linear}
-	mut c := 0
+	data := []u8{len: 400}
+	result := qoi.encode(data, 10, 10, 4, 0) or { panic(err) }
 
-	qoi.encode(a, b, mut c) or { return }
+	print(result.len)
 }
