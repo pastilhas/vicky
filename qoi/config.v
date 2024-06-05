@@ -55,8 +55,8 @@ fn (mut cfg Config) encode(data []u8) []u8 {
 	cfg.write_32(magic)
 	cfg.write_32(cfg.width)
 	cfg.write_32(cfg.height)
-	cfg.write_8(u8(cfg.channels))
-	cfg.write_8(u8(cfg.colorspace))
+	cfg.write_8(cfg.channels)
+	cfg.write_8(cfg.colorspace)
 
 	// Util vars
 	data_len := cfg.width * cfg.height * u32(cfg.channels)
@@ -69,10 +69,10 @@ fn (mut cfg Config) encode(data []u8) []u8 {
 	for idx := 0; idx < data_len; idx += int(cfg.channels) {
 		pix := Pixel.from(data, idx, cfg.channels)
 
-		if pix.equals(pre_pix) {
+		if pix.equals(pre_pix) { // if pixel is same as previous
 			run += 1
 
-			if run == 62 || idx == data_end {
+			if run >= 62 || idx == data_end {
 				cfg.write_8(op_run | (run - 1))
 				run = 0
 			}
@@ -87,7 +87,7 @@ fn (mut cfg Config) encode(data []u8) []u8 {
 		}
 
 		pos := pix.hash() % 64
-		if index[pos].equals(pix) {
+		if index[pos].equals(pix) { // if pixel was found before
 			cfg.write_8(op_index | u8(pos))
 			pre_pix = pix
 			continue
