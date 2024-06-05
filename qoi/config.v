@@ -50,7 +50,7 @@ fn (mut cfg Config) write_8(v u8) {
 	cfg.p += 1
 }
 
-pub fn (mut cfg Config) encode(data []u8) []u8 {
+fn (mut cfg Config) encode(data []u8) []u8 {
 	// Write header
 	cfg.write_32(magic)
 	cfg.write_32(cfg.width)
@@ -87,35 +87,37 @@ pub fn (mut cfg Config) encode(data []u8) []u8 {
 		}
 
 		pos := pix.hash() % 64
-		if index[pos].value() == pix.value() {
+		if index[pos].equals(pix) {
 			cfg.write_8(op_index | u8(pos))
-		} else {
-			index[pos] = pix
+			pre_pix = pix
+			continue
+		}
 
-			if pix.a == pre_pix.a {
-				dr := int(pix.r) - pre_pix.r
-				dg := int(pix.g) - pre_pix.g
-				db := int(pix.b) - pre_pix.b
+		index[pos] = pix
 
-				dgr := dr - dg
-				dgb := db - dg
+		if pix.a == pre_pix.a {
+			dr := int(pix.r) - pre_pix.r
+			dg := int(pix.g) - pre_pix.g
+			db := int(pix.b) - pre_pix.b
 
-				if dr > -3 && dr < 2 && dg > -3 && dg < 2 && db > -3 && db < 2 {
-					v := u8(u8(dr + 2) << 4) | (u8(dg + 2) << 2) | u8(db + 2)
-					cfg.write_8(op_diff | v)
-				} else if dgr > -9 && dgr < 8 && dg > -33 && dg < 32 && dgb > -9 && dgb < 8 {
-					cfg.write_8(op_luma | u8(dg + 32))
-					cfg.write_8((u8(dgr + 8) << 4) | u8(dgb + 8))
-				} else {
-					cfg.write_8(op_rgb)
-					cfg.write_8(pix.r)
-					cfg.write_8(pix.g)
-					cfg.write_8(pix.b)
-				}
+			dgr := dr - dg
+			dgb := db - dg
+
+			if dr > -3 && dr < 2 && dg > -3 && dg < 2 && db > -3 && db < 2 {
+				v := u8(u8(dr + 2) << 4) | (u8(dg + 2) << 2) | u8(db + 2)
+				cfg.write_8(op_diff | v)
+			} else if dgr > -9 && dgr < 8 && dg > -33 && dg < 32 && dgb > -9 && dgb < 8 {
+				cfg.write_8(op_luma | u8(dg + 32))
+				cfg.write_8((u8(dgr + 8) << 4) | u8(dgb + 8))
 			} else {
-				cfg.write_8(op_rgba)
-				cfg.write_32(pix.value())
+				cfg.write_8(op_rgb)
+				cfg.write_8(pix.r)
+				cfg.write_8(pix.g)
+				cfg.write_8(pix.b)
 			}
+		} else {
+			cfg.write_8(op_rgba)
+			cfg.write_32(pix.rgba())
 		}
 
 		pre_pix = pix

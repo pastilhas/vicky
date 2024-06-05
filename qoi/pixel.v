@@ -20,7 +20,7 @@ fn Pixel.from(data []u8, idx int, len u8) Pixel {
 	}
 }
 
-fn (pix Pixel) value() u32 {
+fn (pix Pixel) rgba() u32 {
 	return (u32(pix.r) << 24) | (u32(pix.g) << 16) | (u32(pix.b) << 8) | u32(pix.a)
 }
 
