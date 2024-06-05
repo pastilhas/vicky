@@ -1,136 +1,103 @@
 module qoi
 
-pub fn encode(data []u8, desc Decoder, mut len &int) ![]u8 {
-	if desc.width == 0 || desc.height == 0 {
-		return error('Image has invalid size ${desc.width}x${desc.height}')
+pub fn (cfg Config) encode(data []u8, mut len &int) ![]u8 {
+	if cfg.width == 0 || cfg.height == 0 {
+		return error('Image has invalid size ${cfg.width}x${cfg.height}')
 	}
 
-	if desc.width * desc.height >= max_pixels {
-		return error('Image of size ${desc.width * desc.height} is bigger than limit ${max_pixels}')
+	if cfg.width * cfg.height >= max_pixels {
+		return error('Image of size ${cfg.width * cfg.height} is bigger than limit ${max_pixels}')
 	}
 
-	max_size := desc.width * desc.height * (u32(desc.channels) + 1) + header_size + padding.len
+	max_size := cfg.width * cfg.height * (u32(cfg.channels) + 1) + header_size + padding.len
 
 	mut p := 0
-	mut bytes := []u8{len: max_size}
+	mut bytes := []u8{len: max_size, init: 0}
 
-	write_int(mut bytes, mut p, magic)
-	write_int(mut bytes, mut p, desc.width)
-	write_int(mut bytes, mut p, desc.height)
+	// Write header
+	write_32(mut bytes, mut p, magic)
+	write_32(mut bytes, mut p, cfg.width)
+	write_32(mut bytes, mut p, cfg.height)
+	write_8(mut bytes, mut p, u8(cfg.channels))
+	write_8(mut bytes, mut p, u8(cfg.colorspace))
+
+	// Util vars
+	data_len := cfg.width * cfg.height * u32(cfg.channels)
+	data_end := data_len - u32(cfg.channels)
+	mut pre_pix := Pixel{0, 0, 0, 0xff}
+	mut index := [64]Pixel{}
+	mut run := u8(0)
+
+	for idx := 0; idx < data_len; idx += int(cfg.channels) {
+		pix := Pixel{
+			r: data[idx + 0]
+			g: data[idx + 1]
+			b: data[idx + 2]
+			a: if cfg.channels == Channels.rgba {
+				data[idx + 3]
+			} else {
+				0xff
+			}
+		}
+
+		if pix.value == pre_pix.value {
+			run += 1
+
+			if run == 62 || idx == data_end {
+				write_8(mut bytes, mut p, op_run | (run - 1))
+				run = 0
+			}
+
+			pre_pix = pix
+			continue
+		}
+
+		if run > 0 { // if was in run write it
+			write_8(mut bytes, mut p, op_run | run - 1)
+			run = 0
+		}
+
+		pos := hash(pix) % 64
+		if index[pos].value == pix.value { // if pixel found before, point
+			write_8(mut bytes, mut p, op_index | u8(pos))
+		} else {
+			index[pos] = pix
+
+			if pix.a == pre_pix.a {
+				dr := int(pix.r) - pre_pix.r
+				dg := int(pix.g) - pre_pix.g
+				db := int(pix.b) - pre_pix.b
+
+				dgr := dr - dg
+				dgb := db - dg
+
+				if dr > -3 && dr < 2 && dg > -3 && dg < 2 && db > -3 && db < 2 {
+					v := u8(u8(dr + 2) << 4) | (u8(dg + 2) << 2) | u8(db + 2)
+					write_8(mut bytes, mut p, op_diff | v)
+				} else if dgr > -9 && dgr < 8 && dg > -33 && dg < 32 && dgb > -9 && dgb < 8 {
+					write_8(mut bytes, mut p, op_luma | u8(dg + 32))
+					write_8(mut bytes, mut p, (u8(dgr + 8) << 4) | u8(dgb + 8))
+				} else {
+					write_8(mut bytes, mut p, op_rgb)
+					write_8(mut bytes, mut p, pix.r)
+					write_8(mut bytes, mut p, pix.g)
+					write_8(mut bytes, mut p, pix.b)
+				}
+			} else {
+				write_8(mut bytes, mut p, op_rgba)
+				write_32(mut bytes, mut p, pix.value())
+			}
+		}
+
+		pre_pix = pix
+	}
+
+	for q in padding {
+		write_8(mut bytes, mut p, q)
+	}
 
 	unsafe {
 		*len = p
 	}
 	return bytes
 }
-
-/*
-void *qoi_encode(const void *data, const qoi_desc *desc, int *out_len) {
-	int i, max_size, p, run;
-	int px_len, px_end, px_pos, channels;
-	unsigned char *bytes;
-	const unsigned char *pixels;
-	qoi_rgba_t index[64];
-	qoi_rgba_t px, px_prev;
-
-	bytes[p++] = desc->channels;
-	bytes[p++] = desc->colorspace;
-
-
-	pixels = (const unsigned char *)data;
-
-	QOI_ZEROARR(index);
-
-	run = 0;
-	px_prev.rgba.r = 0;
-	px_prev.rgba.g = 0;
-	px_prev.rgba.b = 0;
-	px_prev.rgba.a = 255;
-	px = px_prev;
-
-	px_len = desc->width * desc->height * desc->channels;
-	px_end = px_len - desc->channels;
-	channels = desc->channels;
-
-	for (px_pos = 0; px_pos < px_len; px_pos += channels) {
-		px.rgba.r = pixels[px_pos + 0];
-		px.rgba.g = pixels[px_pos + 1];
-		px.rgba.b = pixels[px_pos + 2];
-
-		if (channels == 4) {
-			px.rgba.a = pixels[px_pos + 3];
-		}
-
-		if (px.v == px_prev.v) {
-			run++;
-			if (run == 62 || px_pos == px_end) {
-				bytes[p++] = QOI_OP_RUN | (run - 1);
-				run = 0;
-			}
-		}
-		else {
-			int index_pos;
-
-			if (run > 0) {
-				bytes[p++] = QOI_OP_RUN | (run - 1);
-				run = 0;
-			}
-
-			index_pos = QOI_COLOR_HASH(px) % 64;
-
-			if (index[index_pos].v == px.v) {
-				bytes[p++] = QOI_OP_INDEX | index_pos;
-			}
-			else {
-				index[index_pos] = px;
-
-				if (px.rgba.a == px_prev.rgba.a) {
-					signed char vr = px.rgba.r - px_prev.rgba.r;
-					signed char vg = px.rgba.g - px_prev.rgba.g;
-					signed char vb = px.rgba.b - px_prev.rgba.b;
-
-					signed char vg_r = vr - vg;
-					signed char vg_b = vb - vg;
-
-					if (
-						vr > -3 && vr < 2 &&
-						vg > -3 && vg < 2 &&
-						vb > -3 && vb < 2
-					) {
-						bytes[p++] = QOI_OP_DIFF | (vr + 2) << 4 | (vg + 2) << 2 | (vb + 2);
-					}
-					else if (
-						vg_r >  -9 && vg_r <  8 &&
-						vg   > -33 && vg   < 32 &&
-						vg_b >  -9 && vg_b <  8
-					) {
-						bytes[p++] = QOI_OP_LUMA     | (vg   + 32);
-						bytes[p++] = (vg_r + 8) << 4 | (vg_b +  8);
-					}
-					else {
-						bytes[p++] = QOI_OP_RGB;
-						bytes[p++] = px.rgba.r;
-						bytes[p++] = px.rgba.g;
-						bytes[p++] = px.rgba.b;
-					}
-				}
-				else {
-					bytes[p++] = QOI_OP_RGBA;
-					bytes[p++] = px.rgba.r;
-					bytes[p++] = px.rgba.g;
-					bytes[p++] = px.rgba.b;
-					bytes[p++] = px.rgba.a;
-				}
-			}
-		}
-		px_prev = px;
-	}
-
-	for (i = 0; i < (int)sizeof(qoi_padding); i++) {
-		bytes[p++] = qoi_padding[i];
-	}
-
-	*out_len = p;
-	return bytes;
-}
-*/
