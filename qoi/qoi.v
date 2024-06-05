@@ -21,16 +21,15 @@ pub fn Config.new(w u32, h u32, ch u8, cs u8) Config {
 	return Config{w, h, unsafe { Channels(ch) }, unsafe { Colorspace(cs) }}
 }
 
-struct RGBA {
+struct Pixel {
 	r u8
 	g u8
 	b u8
-	a u8 = 0
+	a u8
 }
 
-union Pixel {
-	RGBA
-	value u32
+fn (pix Pixel) value() u32 {
+	return (u32(pix.r) << 24) | (u32(pix.g) << 16) | (u32(pix.b) << 8) | u32(pix.a)
 }
 
 const op_index = u8(0x00)
@@ -74,7 +73,7 @@ fn read_32(bytes []u8, mut p &int) u32 {
 }
 
 fn read_32(bytes []u8, mut p &int) u8 {
-	a := u32(bytes[*p])
+	a := bytes[*p]
 	unsafe {
 		*p = *p + 1
 	}
