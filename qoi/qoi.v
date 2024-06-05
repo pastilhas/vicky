@@ -10,22 +10,26 @@ pub enum Channels as u8 {
 	rgba = 4
 }
 
-pub struct Decoder {
+pub struct Config {
 	width      u32
 	height     u32
 	channels   Channels
 	colorspace Colorspace
 }
 
-struct Rgba32_Component {
+pub fn Config.new(w u32, h u32, ch u8, cs u8) Config {
+	return Config{w, h, unsafe { Channels(ch) }, unsafe { Colorspace(cs) }}
+}
+
+struct RGBA {
 	r u8
 	g u8
 	b u8
-	a u8
+	a u8 = 0
 }
 
-union Rgba32 {
-	Rgba32_Component
+union Pixel {
+	RGBA
 	value u32
 }
 
@@ -36,22 +40,29 @@ const op_run = u8(0xc0)
 const op_rgb = u8(0xfe)
 const op_rgba = u8(0xff)
 const mask_2 = u8(0xc0)
-const magic = u32('q'.u32() << 24 | 'o'.u32() << 16 | 'i'.u32() << 8 | 'f'.u32())
+const magic = u32(0x716f6966)
 const header_size = u32(14)
 const max_pixels = u32(400_000_000)
 const padding = [u8(0), 0, 0, 0, 0, 0, 0, 1]
 
-fn write_int(mut bytes []u8, mut p &int, v u32) {
-	bytes[*p] = u8(v >> 24 & 0x000000ff)
-	bytes[*p + 1] = u8(v >> 16 & 0x000000ff)
-	bytes[*p + 2] = u8(v >> 8 & 0x000000ff)
+fn write_32(mut bytes []u8, mut p &int, v u32) {
+	bytes[*p] = u8((v >> 24) & 0x000000ff)
+	bytes[*p + 1] = u8((v >> 16) & 0x000000ff)
+	bytes[*p + 2] = u8((v >> 8) & 0x000000ff)
 	bytes[*p + 3] = u8(v & 0x000000ff)
 	unsafe {
 		*p = *p + 4
 	}
 }
 
-fn read_int(bytes []u8, mut p &int) u32 {
+fn write_8(mut bytes []u8, mut p &int, v u8) {
+	bytes[*p] = u8(v & 0x000000ff)
+	unsafe {
+		*p = *p + 1
+	}
+}
+
+fn read_32(bytes []u8, mut p &int) u32 {
 	a := u32(bytes[*p])
 	b := u32(bytes[*p + 1])
 	c := u32(bytes[*p + 2])
@@ -60,4 +71,16 @@ fn read_int(bytes []u8, mut p &int) u32 {
 		*p = *p + 4
 	}
 	return a << 24 | b << 16 | c << 8 | d
+}
+
+fn read_32(bytes []u8, mut p &int) u8 {
+	a := u32(bytes[*p])
+	unsafe {
+		*p = *p + 1
+	}
+	return a
+}
+
+fn hash(pix Pixel) int {
+	return int(pix.r) * 3 + int(pix.g) * 5 + int(pix.b) * 7 + int(pix.a) * 11
 }
